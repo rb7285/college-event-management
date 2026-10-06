@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type EventItem = {
   id: number;
@@ -10,47 +9,17 @@ type EventItem = {
   date: string;
   venue: string;
   attendees: number;
-  color: string;
 };
 
-const initialEvents: EventItem[] = [
-  {
-    id: 1,
-    title: "Annual Tech Fest",
-    category: "Technology",
-    date: "Oct 15, 2026",
-    venue: "Main Auditorium",
-    attendees: 120,
-    color: "bg-blue-100 text-blue-700",
-  },
-  {
-    id: 2,
-    title: "Cultural Night",
-    category: "Cultural",
-    date: "Oct 19, 2026",
-    venue: "College Ground",
-    attendees: 86,
-    color: "bg-purple-100 text-purple-700",
-  },
-  {
-    id: 3,
-    title: "Coding Competition",
-    category: "Technology",
-    date: "Oct 23, 2026",
-    venue: "Computer Lab 1",
-    attendees: 54,
-    color: "bg-emerald-100 text-emerald-700",
-  },
-  {
-    id: 4,
-    title: "Sports Day",
-    category: "Sports",
-    date: "Oct 28, 2026",
-    venue: "Sports Ground",
-    attendees: 95,
-    color: "bg-orange-100 text-orange-700",
-  },
-];
+type EventForm = {
+  title: string;
+  category: string;
+  date: string;
+  venue: string;
+};
+
+type FormErrors = Partial<Record<keyof EventForm, string>>;
+type NoticeTone = "info" | "success" | "error";
 
 const navigation = [
   { name: "Dashboard", icon: "▦" },
@@ -59,11 +28,61 @@ const navigation = [
   { name: "Reports", icon: "▥" },
 ];
 
+const categoryColors = [
+  "bg-blue-50 text-blue-700",
+  "bg-violet-50 text-violet-700",
+  "bg-emerald-50 text-emerald-700",
+  "bg-orange-50 text-orange-700",
+  "bg-indigo-50 text-indigo-700",
+  "bg-rose-50 text-rose-700",
+];
+
+const emptyForm: EventForm = {
+  title: "",
+  category: "",
+  date: "",
+  venue: "",
+};
+
+const noticeStyles: Record<NoticeTone, string> = {
+  info: "border-indigo-200 bg-indigo-50 text-indigo-800",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  error: "border-rose-200 bg-rose-50 text-rose-800",
+};
+
+function colorForCategory(category: string) {
+  let hash = 0;
+
+  for (let index = 0; index < category.length; index += 1) {
+    hash = category.charCodeAt(index) + ((hash << 5) - hash);
+  }
+
+  return categoryColors[Math.abs(hash) % categoryColors.length];
+}
+
+function isUpcoming(dateValue: string) {
+  const eventDate = new Date(dateValue);
+  if (Number.isNaN(eventDate.getTime())) {
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return eventDate >= today;
+}
+
 export default function Home() {
   const [activePage, setActivePage] = useState("Dashboard");
   const [search, setSearch] = useState("");
-  const [events, setEvents] = useState(initialEvents);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+  const [noticeTone, setNoticeTone] = useState<NoticeTone>("info");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [form, setForm] = useState<EventForm>(emptyForm);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [saving, setSaving] = useState(false);
 
   const filteredEvents = events.filter((event) =>
     `${event.title} ${event.category} ${event.venue}`
@@ -71,15 +90,179 @@ export default function Home() {
       .includes(search.toLowerCase())
   );
 
-  function registerStudent(event: EventItem) {
-    setEvents((current) =>
-      current.map((item) =>
-        item.id === event.id
-          ? { ...item, attendees: item.attendees + 1 }
-          : item
-      )
-    );
-    setNotice(`Demo registration recorded for ${event.title}.`);
+  const upcomingCount = useMemo(
+    () => events.filter((event) => isUpcoming(event.date)).length,
+    [events]
+  );
+
+  const showNotice = useCallback((message: string, tone: NoticeTone = "info") => {
+    setNotice(message);
+    setNoticeTone(tone);
+  }, []);
+
+  const fetchEvents = useCallback(async () => {
+    const response = await fetch("/api/events");
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        payload && typeof payload.error === "string"
+          ? payload.error
+          : "Failed to load events"
+      );
+    }
+
+    if (!Array.isArray(payload)) {
+      throw new Error("Failed to load events");
+    }
+
+    return payload as EventItem[];
+  }, []);
+
+  const loadEvents = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
+      setLoadError("");
+
+      try {
+        const payload = await fetchEvents();
+        setEvents(payload);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load events. Please refresh the page.";
+        setLoadError(message);
+        setEvents([]);
+        showNotice(message, "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchEvents, showNotice]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchEvents()
+      .then((payload) => {
+        if (!cancelled) {
+          setEvents(payload);
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load events. Please refresh the page.";
+        setLoadError(message);
+        setEvents([]);
+        showNotice(message, "error");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchEvents, showNotice]);
+
+  function openCreateForm() {
+    setActivePage("Events");
+    setForm(emptyForm);
+    setFormErrors({});
+    setIsFormOpen(true);
+  }
+
+  function closeCreateForm() {
+    if (saving) {
+      return;
+    }
+
+    setIsFormOpen(false);
+    setForm(emptyForm);
+    setFormErrors({});
+  }
+
+  function validateForm() {
+    const errors: FormErrors = {};
+
+    if (!form.title.trim()) {
+      errors.title = "Event title is required.";
+    }
+
+    if (!form.category.trim()) {
+      errors.category = "Category is required.";
+    }
+
+    if (!form.date) {
+      errors.date = "Event date is required.";
+    }
+
+    if (!form.venue.trim()) {
+      errors.venue = "Venue is required.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
+  async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (saving || !validateForm()) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          category: form.category.trim(),
+          date: form.date,
+          venue: form.venue.trim(),
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          payload && typeof payload.error === "string"
+            ? payload.error
+            : "Could not create the event."
+        );
+      }
+
+      setIsFormOpen(false);
+      setForm(emptyForm);
+      setFormErrors({});
+      showNotice("Event created and saved to the database.", "success");
+      await loadEvents({ silent: true });
+    } catch (error) {
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Could not create the event.",
+        "error"
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -169,10 +352,7 @@ export default function Home() {
               </div>
 
               <button
-                onClick={() => {
-                  setActivePage("Events");
-                  setNotice("Event creation will be added with the database.");
-                }}
+                onClick={openCreateForm}
                 className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
               >
                 + Create Event
@@ -182,7 +362,7 @@ export default function Home() {
             {notice && (
               <div
                 role="status"
-                className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800"
+                className={`mb-5 rounded-xl border px-4 py-3 text-sm ${noticeStyles[noticeTone]}`}
               >
                 {notice}
               </div>
@@ -195,6 +375,7 @@ export default function Home() {
                   value: events.length,
                   icon: "▣",
                   color: "bg-blue-50 text-blue-700",
+                  hint: "From SQLite database",
                 },
                 {
                   label: "Student Registrations",
@@ -204,18 +385,21 @@ export default function Home() {
                   ),
                   icon: "♙",
                   color: "bg-violet-50 text-violet-700",
+                  hint: "Saved registrations only",
                 },
                 {
                   label: "Upcoming Events",
-                  value: events.length,
+                  value: upcomingCount,
                   icon: "◷",
                   color: "bg-emerald-50 text-emerald-700",
+                  hint: "Events from today onward",
                 },
                 {
                   label: "Event Categories",
                   value: new Set(events.map((event) => event.category)).size,
                   icon: "▤",
                   color: "bg-orange-50 text-orange-700",
+                  hint: "Distinct saved categories",
                 },
               ].map((stat) => (
                 <div
@@ -231,9 +415,7 @@ export default function Home() {
                     </span>
                   </div>
                   <p className="mt-4 text-3xl font-bold">{stat.value}</p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Current sample data
-                  </p>
+                  <p className="mt-1 text-xs text-slate-400">{stat.hint}</p>
                 </div>
               ))}
             </div>
@@ -257,52 +439,86 @@ export default function Home() {
 
             {activePage === "Dashboard" || activePage === "Events" ? (
               <div className="grid gap-5 lg:grid-cols-2">
-                {filteredEvents.map((event) => (
-                  <article
-                    key={event.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-6"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <span
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${event.color}`}
-                      >
-                        {event.category}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        Event #{event.id}
-                      </span>
-                    </div>
+                {loading && (
+                  <p className="text-sm text-slate-500 lg:col-span-2">
+                    Loading events from database...
+                  </p>
+                )}
 
-                    <h4 className="mt-5 text-lg font-bold">{event.title}</h4>
-
-                    <div className="mt-3 space-y-2 text-sm text-slate-500">
-                      <p>▦ &nbsp; {event.date}</p>
-                      <p>⌖ &nbsp; {event.venue}</p>
-                      <p>♙ &nbsp; {event.attendees} registrations</p>
-                    </div>
-
-                    <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                      <span className="text-xs font-medium text-emerald-700">
-                        ● Upcoming
-                      </span>
-                      <button
-                        onClick={() => registerStudent(event)}
-                        className="rounded-lg border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
-                      >
-                        Demo Register
-                      </button>
-                    </div>
-                  </article>
-                ))}
-
-                {filteredEvents.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center lg:col-span-2">
-                    <p className="font-semibold">No events found</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Try another event name or category.
-                    </p>
+                {!loading && loadError && (
+                  <div className="rounded-2xl border border-dashed border-rose-200 bg-white p-10 text-center lg:col-span-2">
+                    <p className="font-semibold">Could not load events</p>
+                    <p className="mt-1 text-sm text-slate-500">{loadError}</p>
+                    <button
+                      onClick={() => void loadEvents()}
+                      className="mt-5 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
+                    >
+                      Try again
+                    </button>
                   </div>
                 )}
+
+                {!loading &&
+                  !loadError &&
+                  filteredEvents.map((event) => (
+                    <article
+                      key={event.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-6"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span
+                          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${colorForCategory(event.category)}`}
+                        >
+                          {event.category}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          Event #{event.id}
+                        </span>
+                      </div>
+
+                      <h4 className="mt-5 text-lg font-bold">{event.title}</h4>
+
+                      <div className="mt-3 space-y-2 text-sm text-slate-500">
+                        <p>
+                          ▦ &nbsp;
+                          {new Date(event.date).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </p>
+                        <p>⌖ &nbsp; {event.venue}</p>
+                        <p>♙ &nbsp; {event.attendees} registrations</p>
+                      </div>
+
+                      <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                        <span className="text-xs font-medium text-emerald-700">
+                          {isUpcoming(event.date) ? "● Upcoming" : "● Scheduled"}
+                        </span>
+                        <button
+                          type="button"
+                          disabled
+                          title="Student registration is not saved in this version"
+                          className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-400"
+                        >
+                          Demo Register
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+
+                {!loading &&
+                  !loadError &&
+                  filteredEvents.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center lg:col-span-2">
+                      <p className="font-semibold">No events found</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {events.length === 0
+                          ? "Create an event to save it in the database."
+                          : "Try another event name or category."}
+                      </p>
+                    </div>
+                  )}
               </div>
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-white p-8">
@@ -314,8 +530,9 @@ export default function Home() {
                 {activePage === "Students" && (
                   <button
                     onClick={() =>
-                      setNotice(
-                        "The student registration form will be added next."
+                      showNotice(
+                        "Student registration is not connected to the database in this version.",
+                        "info"
                       )
                     }
                     className="mt-5 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
@@ -332,6 +549,139 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      {isFormOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onClick={closeCreateForm}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-event-title"
+            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 id="create-event-title" className="text-lg font-bold">
+                  Create Event
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Save a campus event to the SQLite database.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCreateForm}
+                disabled={saving}
+                className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                aria-label="Close create event form"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleCreateEvent} noValidate>
+              <div>
+                <label htmlFor="event-title" className="mb-1 block text-sm font-medium">
+                  Event title
+                </label>
+                <input
+                  id="event-title"
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, title: event.target.value }))
+                  }
+                  maxLength={120}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Tech Fest 2026"
+                />
+                {formErrors.title && (
+                  <p className="mt-1 text-xs text-rose-600">{formErrors.title}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="event-category" className="mb-1 block text-sm font-medium">
+                  Category
+                </label>
+                <input
+                  id="event-category"
+                  value={form.category}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      category: event.target.value,
+                    }))
+                  }
+                  maxLength={120}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Technical, Cultural, Sports"
+                />
+                {formErrors.category && (
+                  <p className="mt-1 text-xs text-rose-600">{formErrors.category}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="event-date" className="mb-1 block text-sm font-medium">
+                  Date
+                </label>
+                <input
+                  id="event-date"
+                  type="date"
+                  value={form.date}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, date: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                {formErrors.date && (
+                  <p className="mt-1 text-xs text-rose-600">{formErrors.date}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="event-venue" className="mb-1 block text-sm font-medium">
+                  Venue
+                </label>
+                <input
+                  id="event-venue"
+                  value={form.venue}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, venue: event.target.value }))
+                  }
+                  maxLength={120}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Main Auditorium"
+                />
+                {formErrors.venue && (
+                  <p className="mt-1 text-xs text-rose-600">{formErrors.venue}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeCreateForm}
+                  disabled={saving}
+                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? "Saving..." : "Save Event"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
