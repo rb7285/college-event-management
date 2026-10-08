@@ -1,7 +1,5 @@
 "use client";
-
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-
 type EventItem = {
   id: number;
   title: string;
@@ -10,24 +8,20 @@ type EventItem = {
   venue: string;
   attendees: number;
 };
-
 type EventForm = {
   title: string;
   category: string;
   date: string;
   venue: string;
 };
-
 type FormErrors = Partial<Record<keyof EventForm, string>>;
 type NoticeTone = "info" | "success" | "error";
-
 const navigation = [
   { name: "Dashboard", icon: "▦" },
   { name: "Events", icon: "▣" },
   { name: "Students", icon: "♙" },
   { name: "Reports", icon: "▥" },
 ];
-
 const categoryColors = [
   "bg-blue-50 text-blue-700",
   "bg-violet-50 text-violet-700",
@@ -36,41 +30,33 @@ const categoryColors = [
   "bg-indigo-50 text-indigo-700",
   "bg-rose-50 text-rose-700",
 ];
-
 const emptyForm: EventForm = {
   title: "",
   category: "",
   date: "",
   venue: "",
 };
-
 const noticeStyles: Record<NoticeTone, string> = {
   info: "border-indigo-200 bg-indigo-50 text-indigo-800",
   success: "border-emerald-200 bg-emerald-50 text-emerald-800",
   error: "border-rose-200 bg-rose-50 text-rose-800",
 };
-
 function colorForCategory(category: string) {
   let hash = 0;
-
   for (let index = 0; index < category.length; index += 1) {
     hash = category.charCodeAt(index) + ((hash << 5) - hash);
   }
-
   return categoryColors[Math.abs(hash) % categoryColors.length];
 }
-
 function isUpcoming(dateValue: string) {
   const eventDate = new Date(dateValue);
   if (Number.isNaN(eventDate.getTime())) {
     return false;
   }
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return eventDate >= today;
 }
-
 export default function Home() {
   const [activePage, setActivePage] = useState("Dashboard");
   const [search, setSearch] = useState("");
@@ -83,27 +69,22 @@ export default function Home() {
   const [form, setForm] = useState<EventForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
-
   const filteredEvents = events.filter((event) =>
     `${event.title} ${event.category} ${event.venue}`
       .toLowerCase()
       .includes(search.toLowerCase())
   );
-
   const upcomingCount = useMemo(
     () => events.filter((event) => isUpcoming(event.date)).length,
     [events]
   );
-
   const showNotice = useCallback((message: string, tone: NoticeTone = "info") => {
     setNotice(message);
     setNoticeTone(tone);
   }, []);
-
   const fetchEvents = useCallback(async () => {
     const response = await fetch("/api/events");
     const payload = await response.json().catch(() => null);
-
     if (!response.ok) {
       throw new Error(
         payload && typeof payload.error === "string"
@@ -111,21 +92,17 @@ export default function Home() {
           : "Failed to load events"
       );
     }
-
     if (!Array.isArray(payload)) {
       throw new Error("Failed to load events");
     }
-
     return payload as EventItem[];
   }, []);
-
   const loadEvents = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!options?.silent) {
         setLoading(true);
       }
       setLoadError("");
-
       try {
         const payload = await fetchEvents();
         setEvents(payload);
@@ -143,10 +120,8 @@ export default function Home() {
     },
     [fetchEvents, showNotice]
   );
-
   useEffect(() => {
     let cancelled = false;
-
     fetchEvents()
       .then((payload) => {
         if (!cancelled) {
@@ -157,7 +132,6 @@ export default function Home() {
         if (cancelled) {
           return;
         }
-
         const message =
           error instanceof Error
             ? error.message
@@ -171,61 +145,49 @@ export default function Home() {
           setLoading(false);
         }
       });
-
     return () => {
       cancelled = true;
     };
   }, [fetchEvents, showNotice]);
-
   function openCreateForm() {
     setActivePage("Events");
     setForm(emptyForm);
     setFormErrors({});
     setIsFormOpen(true);
   }
-
   function closeCreateForm() {
     if (saving) {
       return;
     }
-
     setIsFormOpen(false);
     setForm(emptyForm);
     setFormErrors({});
   }
-
   function validateForm() {
     const errors: FormErrors = {};
-
     if (!form.title.trim()) {
       errors.title = "Event title is required.";
     }
-
     if (!form.category.trim()) {
       errors.category = "Category is required.";
     }
-
     if (!form.date) {
       errors.date = "Event date is required.";
+    } else if (Number.isNaN(new Date(form.date).getTime())) {
+      errors.date = "Please enter a valid event date.";
     }
-
     if (!form.venue.trim()) {
       errors.venue = "Venue is required.";
     }
-
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   }
-
   async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     if (saving || !validateForm()) {
       return;
     }
-
     setSaving(true);
-
     try {
       const response = await fetch("/api/events", {
         method: "POST",
@@ -237,9 +199,7 @@ export default function Home() {
           venue: form.venue.trim(),
         }),
       });
-
       const payload = await response.json().catch(() => null);
-
       if (!response.ok) {
         throw new Error(
           payload && typeof payload.error === "string"
@@ -247,7 +207,6 @@ export default function Home() {
             : "Could not create the event."
         );
       }
-
       setIsFormOpen(false);
       setForm(emptyForm);
       setFormErrors({});
@@ -264,7 +223,6 @@ export default function Home() {
       setSaving(false);
     }
   }
-
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800">
       <div className="flex min-h-screen">
@@ -278,11 +236,9 @@ export default function Home() {
               <p className="text-xs text-slate-400">Event management</p>
             </div>
           </div>
-
           <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
             Workspace
           </p>
-
           <nav className="space-y-2">
             {navigation.map((item) => (
               <button
@@ -302,7 +258,6 @@ export default function Home() {
               </button>
             ))}
           </nav>
-
           <div className="mt-auto rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <p className="font-semibold">College Event Team</p>
             <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -316,7 +271,6 @@ export default function Home() {
             </p>
           </div>
         </aside>
-
         <section className="min-w-0 flex-1">
           <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
             <div>
@@ -325,7 +279,6 @@ export default function Home() {
                 {activePage}
               </h2>
             </div>
-
             <div className="flex items-center gap-3">
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-semibold">Admin Panel</p>
@@ -336,7 +289,6 @@ export default function Home() {
               </div>
             </div>
           </header>
-
           <div className="mx-auto max-w-7xl p-5 sm:p-8">
             <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -350,7 +302,6 @@ export default function Home() {
                   Manage your college events and student registrations.
                 </p>
               </div>
-
               <button
                 onClick={openCreateForm}
                 className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
@@ -358,7 +309,6 @@ export default function Home() {
                 + Create Event
               </button>
             </div>
-
             {notice && (
               <div
                 role="status"
@@ -367,7 +317,6 @@ export default function Home() {
                 {notice}
               </div>
             )}
-
             <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {[
                 {
@@ -419,7 +368,6 @@ export default function Home() {
                 </div>
               ))}
             </div>
-
             <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold">Upcoming Events</h3>
@@ -427,7 +375,6 @@ export default function Home() {
                   Explore activities happening on campus.
                 </p>
               </div>
-
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -436,7 +383,6 @@ export default function Home() {
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:w-64"
               />
             </div>
-
             {activePage === "Dashboard" || activePage === "Events" ? (
               <div className="grid gap-5 lg:grid-cols-2">
                 {loading && (
@@ -444,7 +390,6 @@ export default function Home() {
                     Loading events from database...
                   </p>
                 )}
-
                 {!loading && loadError && (
                   <div className="rounded-2xl border border-dashed border-rose-200 bg-white p-10 text-center lg:col-span-2">
                     <p className="font-semibold">Could not load events</p>
@@ -457,7 +402,6 @@ export default function Home() {
                     </button>
                   </div>
                 )}
-
                 {!loading &&
                   !loadError &&
                   filteredEvents.map((event) => (
@@ -475,9 +419,7 @@ export default function Home() {
                           Event #{event.id}
                         </span>
                       </div>
-
                       <h4 className="mt-5 text-lg font-bold">{event.title}</h4>
-
                       <div className="mt-3 space-y-2 text-sm text-slate-500">
                         <p>
                           ▦ &nbsp;
@@ -490,7 +432,6 @@ export default function Home() {
                         <p>⌖ &nbsp; {event.venue}</p>
                         <p>♙ &nbsp; {event.attendees} registrations</p>
                       </div>
-
                       <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
                         <span className="text-xs font-medium text-emerald-700">
                           {isUpcoming(event.date) ? "● Upcoming" : "● Scheduled"}
@@ -506,7 +447,6 @@ export default function Home() {
                       </div>
                     </article>
                   ))}
-
                 {!loading &&
                   !loadError &&
                   filteredEvents.length === 0 && (
@@ -542,14 +482,12 @@ export default function Home() {
                 )}
               </div>
             )}
-
             <footer className="mt-10 border-t border-slate-200 py-5 text-center text-xs text-slate-400">
               CampusHub · College Event Management System · DevOps Project
             </footer>
           </div>
         </section>
       </div>
-
       {isFormOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
@@ -581,7 +519,6 @@ export default function Home() {
                 ✕
               </button>
             </div>
-
             <form className="space-y-4" onSubmit={handleCreateEvent} noValidate>
               <div>
                 <label htmlFor="event-title" className="mb-1 block text-sm font-medium">
@@ -594,14 +531,20 @@ export default function Home() {
                     setForm((current) => ({ ...current, title: event.target.value }))
                   }
                   maxLength={120}
+                  aria-invalid={Boolean(formErrors.title)}
+                  aria-describedby={formErrors.title ? "event-title-error" : undefined}
                   className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   placeholder="Tech Fest 2026"
                 />
                 {formErrors.title && (
-                  <p className="mt-1 text-xs text-rose-600">{formErrors.title}</p>
+                  <p
+                    id="event-title-error"
+                    className="mt-1 text-xs text-rose-600"
+                  >
+                    {formErrors.title}
+                  </p>
                 )}
               </div>
-
               <div>
                 <label htmlFor="event-category" className="mb-1 block text-sm font-medium">
                   Category
@@ -623,7 +566,6 @@ export default function Home() {
                   <p className="mt-1 text-xs text-rose-600">{formErrors.category}</p>
                 )}
               </div>
-
               <div>
                 <label htmlFor="event-date" className="mb-1 block text-sm font-medium">
                   Date
@@ -641,7 +583,6 @@ export default function Home() {
                   <p className="mt-1 text-xs text-rose-600">{formErrors.date}</p>
                 )}
               </div>
-
               <div>
                 <label htmlFor="event-venue" className="mb-1 block text-sm font-medium">
                   Venue
@@ -660,7 +601,6 @@ export default function Home() {
                   <p className="mt-1 text-xs text-rose-600">{formErrors.venue}</p>
                 )}
               </div>
-
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
