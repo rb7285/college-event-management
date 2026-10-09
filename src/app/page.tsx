@@ -8,6 +8,24 @@ type EventItem = {
   venue: string;
   attendees: number;
 };
+type RegistrationItem = {
+  id: number;
+  name: string;
+  email: string;
+  eventId: number;
+  event: {
+    id: number;
+    title: string;
+  };
+  createdAt: string;
+};
+
+type RegistrationForm = {
+  name: string;
+  email: string;
+  eventId: string;
+};
+
 type EventForm = {
   title: string;
   category: string;
@@ -70,6 +88,16 @@ export default function Home() {
   const [form, setForm] = useState<EventForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [registrations, setRegistrations] = useState<RegistrationItem[]>([]);
+const [registrationForm, setRegistrationForm] =
+  useState<RegistrationForm>({
+    name: "",
+    email: "",
+    eventId: "",
+  });
+const [registrationLoading, setRegistrationLoading] = useState(false);
+const [registrationError, setRegistrationError] = useState("");
+const [registrationSuccess, setRegistrationSuccess] = useState("");
   const categories = Array.from(
     new Set(events.map((event) => event.category).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
@@ -129,6 +157,22 @@ export default function Home() {
     },
     [fetchEvents, showNotice]
   );
+  
+const fetchRegistrations = useCallback(async () => {
+  const response = await fetch("/api/registrations");
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !Array.isArray(payload)) {
+    throw new Error(
+      payload && typeof payload.error === "string"
+        ? payload.error
+        : "Failed to load registrations"
+    );
+  }
+
+  setRegistrations(payload as RegistrationItem[]);
+}, []);
+
   useEffect(() => {
     let cancelled = false;
     fetchEvents()
@@ -232,6 +276,54 @@ export default function Home() {
       setSaving(false);
     }
   }
+  
+async function handleRegisterStudent(
+  event: FormEvent<HTMLFormElement>
+) {
+  event.preventDefault();
+  setRegistrationLoading(true);
+  setRegistrationError("");
+  setRegistrationSuccess("");
+
+  try {
+    const response = await fetch("/api/registrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: registrationForm.name.trim(),
+        email: registrationForm.email.trim(),
+        eventId: Number(registrationForm.eventId),
+      }),
+    });
+
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        payload && typeof payload.error === "string"
+          ? payload.error
+          : "Registration failed"
+      );
+    }
+
+    setRegistrationForm({ name: "", email: "", eventId: "" });
+
+    // Refresh both the student list and event analytics.
+    await Promise.all([
+      fetchRegistrations(),
+      loadEvents({ silent: true }),
+    ]);
+
+    setRegistrationSuccess("Student registered successfully.");
+  } catch (error) {
+    setRegistrationError(
+      error instanceof Error ? error.message : "Registration failed"
+    );
+  } finally {
+    setRegistrationLoading(false);
+  }
+}
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800">
       <div className="flex min-h-screen">
@@ -255,6 +347,16 @@ export default function Home() {
                 onClick={() => {
                   setActivePage(item.name);
                   setNotice("");
+                
+                  if (item.name === "Students") {
+                    void fetchRegistrations().catch((error: unknown) => {
+                      setRegistrationError(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to load registrations"
+                      );
+                    });
+                  }
                 }}
                 className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm transition ${
                   activePage === item.name
@@ -484,28 +586,140 @@ export default function Home() {
                     </div>
                   )}
               </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-white p-8">
-                <h3 className="text-lg font-bold">{activePage}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  This section is part of our project plan. Its features will
-                  be added in the next development milestones.
-                </p>
-                {activePage === "Students" && (
-                  <button
-                    onClick={() =>
-                      showNotice(
-                        "Student registration is not connected to the database in this version.",
-                        "info"
-                      )
-                    }
-                    className="mt-5 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
-                  >
-                    Plan student registration
-                  </button>
-                )}
-              </div>
-            )}
+            
+) : activePage === "Students" ? (
+  <div className="space-y-6">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h3 className="text-lg font-bold">Register a Student</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Register a student for an existing college event.
+      </p>
+
+      <form
+        className="mt-5 grid gap-4 md:grid-cols-3"
+        onSubmit={handleRegisterStudent}
+      >
+        <input
+          required
+          maxLength={120}
+          placeholder="Student name"
+          aria-label="Student name"
+          value={registrationForm.name}
+          onChange={(event) =>
+            setRegistrationForm((current) => ({
+              ...current,
+              name: event.target.value,
+            }))
+          }
+          className="rounded-xl border border-slate-200 px-4 py-3 text-sm"
+        />
+
+        <input
+          required
+          type="email"
+          maxLength={254}
+          placeholder="Student email"
+          aria-label="Student email"
+          value={registrationForm.email}
+          onChange={(event) =>
+            setRegistrationForm((current) => ({
+              ...current,
+              email: event.target.value,
+            }))
+          }
+          className="rounded-xl border border-slate-200 px-4 py-3 text-sm"
+        />
+
+        <select
+          required
+          aria-label="Select event"
+          value={registrationForm.eventId}
+          onChange={(event) =>
+            setRegistrationForm((current) => ({
+              ...current,
+              eventId: event.target.value,
+            }))
+          }
+          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
+        >
+          <option value="">Select an event</option>
+          {events.map((event) => (
+            <option key={event.id} value={event.id}>
+              {event.title}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="submit"
+          disabled={registrationLoading || events.length === 0}
+          className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 md:col-span-3"
+        >
+          {registrationLoading ? "Registering..." : "Register Student"}
+        </button>
+      </form>
+
+      {registrationError && (
+        <p role="alert" className="mt-4 text-sm text-rose-600">
+          {registrationError}
+        </p>
+      )}
+
+      {registrationSuccess && (
+        <p role="status" className="mt-4 text-sm text-emerald-700">
+          {registrationSuccess}
+        </p>
+      )}
+    </div>
+
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h3 className="text-lg font-bold">Registered Students</h3>
+
+      {registrations.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">
+          No student registrations yet. Register a student above to get started.
+        </p>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-slate-500">
+              <tr>
+                <th className="px-3 py-3">Name</th>
+                <th className="px-3 py-3">Email</th>
+                <th className="px-3 py-3">Event</th>
+              </tr>
+            </thead>
+            <tbody>
+              {registrations.map((registration) => (
+                <tr
+                  key={registration.id}
+                  className="border-b last:border-0"
+                >
+                  <td className="px-3 py-3 font-medium">
+                    {registration.name}
+                  </td>
+                  <td className="px-3 py-3">{registration.email}</td>
+                  <td className="px-3 py-3">
+                    {registration.event.title}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+) : (
+  <div className="rounded-2xl border border-slate-200 bg-white p-8">
+    <h3 className="text-lg font-bold">{activePage}</h3>
+    <p className="mt-2 text-sm leading-6 text-slate-500">
+      This section is part of our project plan. Its features will
+      be added in the next development milestones.
+    </p>
+  </div>
+)}
+
             <footer className="mt-10 border-t border-slate-200 py-5 text-center text-xs text-slate-400">
               CampusHub · College Event Management System · DevOps Project
             </footer>
