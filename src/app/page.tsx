@@ -60,6 +60,7 @@ function isUpcoming(dateValue: string) {
 export default function Home() {
   const [activePage, setActivePage] = useState("Dashboard");
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -69,11 +70,19 @@ export default function Home() {
   const [form, setForm] = useState<EventForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
-  const filteredEvents = events.filter((event) =>
-    `${event.title} ${event.category} ${event.venue}`
+  const categories = Array.from(
+    new Set(events.map((event) => event.category).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredEvents = events.filter((event) => {
+    const matchesSearch = `${event.title} ${event.category} ${event.venue}`
       .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+      .includes(search.trim().toLowerCase());
+    const matchesCategory =
+      categoryFilter === "All" || event.category === categoryFilter;
+
+    return matchesSearch && matchesCategory;
+  });
   const upcomingCount = useMemo(
     () => events.filter((event) => isUpcoming(event.date)).length,
     [events]
@@ -375,13 +384,28 @@ export default function Home() {
                   Explore activities happening on campus.
                 </p>
               </div>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search events..."
-                aria-label="Search events"
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:w-64"
-              />
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search events..."
+                  aria-label="Search events"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:w-64"
+                />
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  aria-label="Filter events by category"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:w-48"
+                >
+                  <option value="All">All categories</option>
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             {activePage === "Dashboard" || activePage === "Events" ? (
               <div className="grid gap-5 lg:grid-cols-2">
